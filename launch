@@ -1,0 +1,52 @@
+#!/bin/bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+IMAGE_NAME="unicore-agent:latest"
+CONTAINER_NAME="unicore-agent"
+PORT=${UNICORE_PORT:-8000}
+
+echo "====================================="
+echo "  UniCore Agent Launcher"
+echo "====================================="
+
+if ! command -v docker &> /dev/null; then
+    echo "ERROR: Docker not found"
+    exit 1
+fi
+
+if [ ! -d "/work/agent_mount" ]; then
+    echo "ERROR: /work/agent_mount not found"
+    exit 1
+fi
+
+if [ ! -f "$SCRIPT_DIR/.env" ]; then
+    echo "ERROR: .env file not found at $SCRIPT_DIR/.env"
+    exit 1
+fi
+
+if [ "$(docker ps -q -f name=^/${CONTAINER_NAME}$)" ]; then
+    echo "Stopping existing container..."
+    docker stop "$CONTAINER_NAME" >/dev/null 2>&1
+fi
+
+if [ "$(docker ps -aq -f name=^/${CONTAINER_NAME}$)" ]; then
+    echo "Removing existing container..."
+    docker rm "$CONTAINER_NAME" >/dev/null 2>&1
+fi
+
+echo "Building Docker image..."
+docker build -t "$IMAGE_NAME" "$SCRIPT_DIR"
+
+echo "Starting container..."
+docker run -it --rm \
+    --name "$CONTAINER_NAME" \
+    --gpus all \
+    --network=host \
+    --mount type=bind,source=/,target=/mnt/host,readonly \
+    --mount type=bind,source=/work/agent_mount,target=/mnt/persistent \
+    --env-file "$SCRIPT_DIR/.env" \
+    -e UNICORE_PORT=$PORT \
+    "$IMAGE_NAME"
+
+echo "Container stopped."

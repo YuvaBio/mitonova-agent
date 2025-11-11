@@ -1,0 +1,11 @@
+boto3
+anthropic
+python-dotenv
+redis
+fastapi
+uvicorn
+websockets
+psutil
+requests
+elasticsearch
+psycopg2-binary

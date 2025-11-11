@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MicroCoreAgent</title>
+    <!-- Markdown rendering library -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; height: 100vh; overflow: hidden; }
+        
+        /* Split Pane Layout */
+        #main-container { display: flex; height: 100vh; }
+        
+        /* Left Panel - Task Status */
+        #left-panel { 
+            width: 20%; 
+            min-width: 150px; 
+            display: flex; 
+            flex-direction: column; 
+            border-right: 1px solid #ccc; 
+            background: white;
+        }
+        
+        #status-header {
+            padding: 15px 20px;
+            background: #f0f0f0;
+            border-bottom: 1px solid #ccc;
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        #status-view { 
+            flex: 1; 
+            padding: 20px; 
+            overflow-y: auto; 
+        }
+        
+        #new-conversation { 
+            margin: 15px; 
+            padding: 12px 20px; 
+            background: #0066cc; 
+            color: white; 
+            border: none; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-size: 14px; 
+            font-weight: bold;
+        }
+        #new-conversation:hover { background: #0052a3; }
+        
+        /* Resizer */
+        #resizer { 
+            width: 5px; 
+            cursor: col-resize; 
+            background: #e0e0e0; 
+            position: relative;
+        }
+        #resizer:hover { background: #0066cc; }
+        
+        /* Right Panel - Conversations */
+        #right-panel { 
+            flex: 1; 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden;
+        }
+        
+        #tabs { 
+            display: flex; 
+            background: #f0f0f0; 
+            border-bottom: 1px solid #ccc; 
+            overflow-x: auto; 
+            min-height: 41px;
+        }
+        .tab { 
+            padding: 10px 20px; 
+            cursor: pointer; 
+            border-right: 1px solid #ccc; 
+            white-space: nowrap; 
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tab.active { background: white; font-weight: bold; }
+        .tab:hover { background: #e0e0e0; }
+        .tab-close { 
+            font-size: 16px; 
+            color: #999; 
+            cursor: pointer;
+            padding: 0 4px;
+        }
+        .tab-close:hover { color: #f44336; }
+        
+        #content { 
+            flex: 1; 
+            overflow: hidden; 
+            position: relative;
+        }
+        .tab-content { 
+            display: none; 
+            height: 100%; 
+            flex-direction: column; 
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+        .tab-content.active { display: flex; }
+        
+        #empty-state {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #999;
+            font-size: 18px;
+        }
+        .task-tree { margin-bottom: 20px; }
+        .task-node { margin-left: 20px; padding: 10px; border-left: 2px solid #ccc; cursor: pointer; border-radius: 6px; }
+        .task-node:hover { background: #f5f5f5; }
+        .task-node.root { margin-left: 0; border-left: none; background: #f9f9f9; }
+        .task-node.active { outline: 2px solid #0066cc; }
+        .task-id { font-weight: bold; color: #0066cc; }
+        .task-status { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 12px; margin-left: 10px; }
+        .task-status.running { background: #4caf50; color: white; }
+        .task-status.awaiting_input { background: #2196f3; color: white; }
+        .task-status.completed { background: #2196f3; color: white; }
+        .task-status.error { background: #f44336; color: white; }
+        
+        /* Conversation View */
+        .conversation-container { flex-direction: column; height: 100%; }
+        .messages { flex: 1; overflow-y: auto; padding: 20px; padding-bottom: 0; }
+        .message { margin-bottom: 20px; }
+        .message.user { text-align: right; }
+        .message.system { text-align: right; }
+        .message.tool-result { text-align: left; }
+        .message-content { display: inline-block; max-width: 70%; padding: 10px 15px; border-radius: 10px; text-align: left; }
+        .message.user .message-content { background: #0066cc; color: white; }
+        .message.system .message-content { background: #4caf50; color: white; }
+        .message.assistant .message-content { background: #f0f0f0; }
+        .message.tool-result .message-content { background: #f0f0f0; }
+        .message-time { font-size: 11px; color: #999; margin-top: 5px; }
+        
+        /* Markdown styling */
+        .message-content p { margin: 0.5em 0; }
+        .message-content p:first-child { margin-top: 0; }
+        .message-content p:last-child { margin-bottom: 0; }
+        .message-content ul, .message-content ol { margin: 0.5em 0; padding-left: 1.5em; }
+        .message-content li { margin: 0.25em 0; }
+        .message-content code { background: rgba(0,0,0,0.1); padding: 2px 4px; border-radius: 3px; font-family: monospace; }
+        .message-content pre { background: rgba(0,0,0,0.1); padding: 8px; border-radius: 5px; overflow-x: auto; margin: 0.5em 0; }
+        .message-content pre code { background: none; padding: 0; }
+        .message.user .message-content code { background: rgba(255,255,255,0.2); }
+        .message.user .message-content pre { background: rgba(255,255,255,0.2); }
+        .message.system .message-content code { background: rgba(255,255,255,0.2); }
+        .message.system .message-content pre { background: rgba(255,255,255,0.2); }
+        .message.assistant .message-content code { background: rgba(255,255,255,0.6); }
+        .message.assistant .message-content pre { background: rgba(255,255,255,0.6); }
+        
+        /* Collapsible tool sections */
+        .tool-section { margin: 8px 0; border: 1px solid #ddd; border-radius: 5px; overflow: hidden; }
+        .tool-header { 
+            padding: 8px 12px; 
+            background: #f8f8f8; 
+            cursor: pointer; 
+            user-select: none;
+            font-family: monospace;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+        }
+        .tool-header:hover { background: #f0f0f0; }
+        .tool-header .icon { margin-right: 6px; }
+        .tool-header .arrow { margin-left: auto; transition: transform 0.2s; }
+        .tool-header.expanded .arrow { transform: rotate(90deg); }
+        .tool-body { 
+            display: none; 
+            padding: 12px; 
+            background: #fafafa; 
+            border-top: 1px solid #ddd;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+        .tool-body.expanded { display: block; }
+        
+        .message.user .tool-section { border-color: rgba(255,255,255,0.3); }
+        .message.user .tool-header { background: rgba(255,255,255,0.15); color: white; }
+        .message.user .tool-header:hover { background: rgba(255,255,255,0.25); }
+        .message.user .tool-body { background: rgba(255,255,255,0.1); border-top-color: rgba(255,255,255,0.3); color: white; }
+        .message.system .tool-section { border-color: rgba(255,255,255,0.3); }
+        .message.system .tool-header { background: rgba(255,255,255,0.15); color: white; }
+        .message.system .tool-header:hover { background: rgba(255,255,255,0.25); }
+        .message.system .tool-body { background: rgba(255,255,255,0.1); border-top-color: rgba(255,255,255,0.3); color: white; }
+        
+        /* Input Area */
+        .input-area { 
+            display: flex;
+            gap: 10px;
+            margin: 15px;
+            align-items: flex-end;
+        }
+        .input-area button { 
+            padding: 12px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer; 
+            font-size: 14px; 
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+        .input-area button:hover { opacity: 0.8; }
+        .send-btn { background: #0066cc; color: white; }
+        .stop-btn { background: #f44336; color: white; }
+        .message-input { 
+            flex: 1;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 14px; 
+            resize: none;
+            max-height: 33vh;
+            min-height: 44px;
+        }
+        .message-input:focus { outline: 2px solid #0066cc; }
+        
+        .loading { text-align: center; padding: 20px; color: #999; }
+    </style>
+</head>
+<body>
+    <div id="main-container">
+        <!-- Left Panel: Task Status -->
+        <div id="left-panel">
+            <div id="status-header"></div>
+            <div id="status-view">
+                <div class="loading">Loading tasks...</div>
+            </div>
+            <button id="new-conversation">+ New Conversation</button>
+        </div>
+        
+        <!-- Resizer -->
+        <div id="resizer"></div>
+        
+        <!-- Right Panel: Conversation Tabs -->
+        <div id="right-panel">
+            <div id="tabs"></div>
+            <div id="content">
+                <div id="empty-state">Select a task or create a new conversation</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const tabs = {};
+        let activeTab = null;
+        let websockets = {};
+        
+        // Configure marked for markdown rendering
+        marked.setOptions({
+            breaks: true,
+            gfm: true
+        });
+        
+        // Resizer functionality
+        const resizer = document.getElementById('resizer');
+        const leftPanel = document.getElementById('left-panel');
+        const rightPanel = document.getElementById('right-panel');
+        let isResizing = false;
+
+        // Load chat heading from server
+        fetch('/api/config')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('status-header').textContent = data.chat_heading || 'Task Status';
+            })
+            .catch(() => {
+                document.getElementById('status-header').textContent = 'Task Status';
+            });
+        
+        resizer.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            
+            const containerWidth = document.getElementById('main-container').offsetWidth;
+            const newLeftWidth = (e.clientX / containerWidth) * 100;
+            
+            if (newLeftWidth > 15 && newLeftWidth < 70) {
+                leftPanel.style.width = newLeftWidth + '%';
+            }
+        });
+        
+        document.addEventListener('mouseup', () => {
+            isResizing = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        });
+        
+        // Helper function to convert ARN to short model name
+        function arnToShortName(arn) {
+            if (!arn) return 'unknown';
+            
+            // Extract model ID from ARN
+            // Format: arn:aws:bedrock:region::foundation-model/MODEL_ID or inference-profile/PROFILE_ID
+            const parts = arn.split('/');
+            const modelId = parts[parts.length - 1];
+            
+            // Map common model IDs to short names
+            const patterns = {
+                'opus-4-1': 'opus41', 'opus-4': 'opus4', 'sonnet-4-5': 'sonnet45', 
+                'sonnet-4': 'sonnet4', '3-7-sonnet': 'sonnet37', '3-5-sonnet': 'sonnet35',
+                '3-5-haiku': 'haiku35', '3-opus': 'opus3', '3-sonnet': 'sonnet3',
+                '3-haiku': 'haiku3', 'claude-2': 'claude2', 'nova-premier': 'nova-premier',
+                'nova-pro': 'nova-pro', 'nova-lite': 'nova-lite', 'nova-micro': 'nova-micro'
+            };
+            
+            const modelIdLower = modelId.toLowerCase();
+            for (const [pattern, shortName] of Object.entries(patterns)) {
+                if (modelIdLower.includes(pattern)) return shortName;
+            }
+            
+            // Return simplified version if no match
+            return modelId.split(':')[0].substring(0, 20);
+        }
+        
+        // Helper function to format timestamp
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return 'N/A';
+            
+            const date = new Date(timestamp * 1000);
+            const now = new Date();
+            const isToday = date.toDateString() === now.toDateString();
+            
+            if (isToday) {
+                // Show time if today
+                return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            } else {
+                // Show date if not today
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            }
+        }
+        
+        // Tab Management
+        function switchTab(tabId) {
+            // Hide empty state
+            const emptyState = document.getElementById('empty-state');
+            if (emptyState) emptyState.style.display = 'none';
+            
+            // First, explicitly hide ALL tab contents
+            Object.values(tabs).forEach(tabContent => {
+                tabContent.classList.remove('active');
+            });
+            
+            // Update tab buttons
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            
+            // Now show the selected tab
+            const tab = document.querySelector(`[data-tab="${tabId}"]`);
+            const content = tabs[tabId];
+            
+            if (tab) tab.classList.add('active');
+            if (content) {
+                content.classList.add('active');
+            }
+            
+            activeTab = tabId;
+            loadTasks();
+        }
+        
+        function createConversationTab(taskId, isNew = false) {
+            if (tabs[taskId]) {
+                switchTab(taskId);
+                return;
+            }
+            
+            // Create tab button with close icon
+            const tabBtn = document.createElement('div');
+            tabBtn.className = 'tab';
+            tabBtn.dataset.tab = taskId;
+            
+            const tabLabel = document.createElement('span');
+            tabLabel.textContent = taskId.substring(0, 12) + '...';
+            tabLabel.title = taskId;
+            tabLabel.onclick = () => switchTab(taskId);
+            
+            const closeIcon = document.createElement('span');
+            closeIcon.className = 'tab-close';
+            closeIcon.textContent = '×';
+            closeIcon.onclick = (e) => {
+                e.stopPropagation();
+                closeTab(taskId);
+            };
+            
+            tabBtn.appendChild(tabLabel);
+            tabBtn.appendChild(closeIcon);
+            document.getElementById('tabs').appendChild(tabBtn);
+            
+            // Create tab content
+            const content = document.createElement('div');
+            content.id = taskId + '-view';
+            content.className = 'tab-content conversation-container';
+            content.innerHTML = `
+                <div id="messages-${taskId}" class="messages">
+                    <div class="loading">Loading conversation...</div>
+                </div>
+                <div class="input-area">
+                    <textarea id="message-input-${taskId}" class="message-input" placeholder="Type a message..." rows="1"></textarea>
+                    <button id="send-btn-${taskId}" class="send-btn">Send</button>
+                </div>
+            `;
+            document.getElementById('content').appendChild(content);
+            tabs[taskId] = content;
+            
+            // Setup event listeners
+            const input = document.getElementById(`message-input-${taskId}`);
+            input.addEventListener('input', function() {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, window.innerHeight / 3) + 'px';
+            });
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage(taskId);
+                }
+            });
+            
+            const sendBtn = document.getElementById(`send-btn-${taskId}`);
+            sendBtn.onclick = () => sendMessage(taskId);
+            
+            // Switch to new tab
+            switchTab(taskId);
+            
+            // If new task, create it; otherwise load conversation
+            if (isNew) {
+                createNewTask(taskId);
+            } else {
+                loadConversation(taskId);
+                setupWebSocket(taskId);
+            }
+        }
+        
+        function closeTab(taskId) {
+            const tab = document.querySelector(`[data-tab="${taskId}"]`);
+            const content = tabs[taskId];
+            
+            if (tab) tab.remove();
+            if (content) content.remove();
+            delete tabs[taskId];
+            
+            // Close WebSocket
+            if (websockets[taskId]) {
+                websockets[taskId].close();
+                delete websockets[taskId];
+            }
+            
+            // If this was the active tab, switch to another or show empty state
+            if (activeTab === taskId) {
+                const remainingTabs = Object.keys(tabs);
+                if (remainingTabs.length > 0) {
+                    switchTab(remainingTabs[0]);
+                } else {
+                    activeTab = null;
+                    const emptyState = document.getElementById('empty-state');
+                    if (emptyState) emptyState.style.display = 'flex';
+                }
+            }
+        }
+        
+        function setupWebSocket(taskId) {
+            if (websockets[taskId]) return;
+            
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const ws = new WebSocket(`${protocol}//${window.location.host}/ws/${taskId}`);
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'message' || data.type === 'update') {
+                    loadConversation(taskId);
+                } else if (data.type === 'state') {
+                    // Update button state based on task status
+                    const isRunning = data.status === 'running';
+                    setSendButtonState(taskId, isRunning);
+                }
+            };
+            
+            ws.onclose = () => {
+                delete websockets[taskId];
+            };
+            
+            websockets[taskId] = ws;
+        }
+        
+        async function loadTasks() {
+            const response = await fetch('/api/tasks');
+            const data = await response.json();
+            renderTaskList(data.tasks);
+        }
+        
+        async function loadConversation(taskId) {
+            const response = await fetch(`/api/task/${taskId}/conversation`);
+            const data = await response.json();
+            renderConversation(taskId, data.conversation);
+        }
+        
+        async function createNewTask(taskId) {
+            try {
+                const response = await fetch('/api/task/new', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({mode: 'iterative', model: 'sonnet45'})
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert('Failed to create task: ' + (error.detail || 'Unknown error'));
+                    closeTab(taskId);
+                    return;
+                }
+                
+                const data = await response.json();
+            
+            const realTaskId = data.task_id;
+            
+            // Update tab with real task ID
+            const tabBtn = document.querySelector(`[data-tab="${taskId}"]`);
+            if (tabBtn) {
+                tabBtn.dataset.tab = realTaskId;
+                
+                // Update label
+                const tabLabel = tabBtn.querySelector('span:first-child');
+                if (tabLabel) {
+                    tabLabel.textContent = realTaskId.substring(0, 12) + '...';
+                    tabLabel.title = realTaskId;
+                    tabLabel.onclick = () => switchTab(realTaskId);
+                }
+                
+                // Update close button
+                const closeIcon = tabBtn.querySelector('.tab-close');
+                if (closeIcon) {
+                    closeIcon.onclick = (e) => {
+                        e.stopPropagation();
+                        closeTab(realTaskId);
+                    };
+                }
+            }
+            
+            // Update content ID and references
+            const content = tabs[taskId];
+            if (content) {
+                content.id = realTaskId + '-view';
+                
+                // Update all IDs in the content
+                const messagesDiv = content.querySelector(`#messages-${taskId}`);
+                if (messagesDiv) messagesDiv.id = `messages-${realTaskId}`;
+                
+                const input = content.querySelector(`#message-input-${taskId}`);
+                if (input) {
+                    input.id = `message-input-${realTaskId}`;
+                    // Update event listeners
+                    const newInput = input.cloneNode(true);
+                    input.parentNode.replaceChild(newInput, input);
+                    
+                    newInput.addEventListener('input', function() {
+                        this.style.height = 'auto';
+                        this.style.height = Math.min(this.scrollHeight, window.innerHeight / 3) + 'px';
+                    });
+                    newInput.addEventListener('keydown', function(e) {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            sendMessage(realTaskId);
+                        }
+                    });
+                }
+                
+                const sendBtn = content.querySelector(`#send-btn-${taskId}`);
+                if (sendBtn) {
+                    sendBtn.id = `send-btn-${realTaskId}`;
+                    sendBtn.onclick = () => sendMessage(realTaskId);
+                }
+                
+                tabs[realTaskId] = content;
+                delete tabs[taskId];
+            }
+            
+            // Setup WebSocket for real task
+            setupWebSocket(realTaskId);
+            
+            // Load initial conversation (in case messages were sent during creation)
+            loadConversation(realTaskId);
+            
+            activeTab = realTaskId;
+            } catch (error) {
+                console.error('Error creating task:', error);
+                alert('Failed to create task: ' + error.message);
+                closeTab(taskId);
+            }
+        }
+        
+        async function sendMessage(taskId) {
+            const input = document.getElementById(`message-input-${taskId}`);
+            const sendBtn = document.getElementById(`send-btn-${taskId}`);
+            const isRunning = sendBtn.textContent === 'Stop';
+            
+            if (isRunning) {
+                // Stop task
+                await fetch(`/api/task/${taskId}/stop`, {method: 'POST'});
+                return;
+            }
+            
+            // Check for message content only if sending a message
+            const message = input.value.trim();
+            if (!message) return;
+            
+            // Send message
+            input.value = '';
+            input.style.height = 'auto';
+            
+            const response = await fetch(`/api/task/${taskId}/message`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({message})
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                alert('Failed to send message: ' + (error.detail || 'Unknown error'));
+                return;
+            }
+            
+            // Reload conversation immediately to show user message
+            loadConversation(taskId);
+        }
+        
+        function renderTaskList(tasks) {
+            const statusView = document.getElementById('status-view');
+            statusView.innerHTML = '';
+            
+            // Filter out tasks starting with "task_"
+            tasks = tasks.filter(task => !task.task_id.startsWith('task_'));
+            
+            if (tasks.length === 0) {
+                statusView.innerHTML = '<div class="loading">No tasks found</div>';
+                return;
+            }
+            
+            // Build hierarchy
+            const taskMap = {};
+            const rootTasks = [];
+            
+            tasks.forEach(task => {
+                // Calculate latest message timestamp for sorting
+                let latestTimestamp = 0;
+                if (task.conversation && Array.isArray(task.conversation)) {
+                    task.conversation.forEach(turn => {
+                        if (turn.started_at && turn.started_at > latestTimestamp) {
+                            latestTimestamp = turn.started_at;
+                        }
+                    });
+                }
+                taskMap[task.task_id] = {...task, children: [], latestTimestamp};
+            });
+            
+            tasks.forEach(task => {
+                if (task.parent_task_id && taskMap[task.parent_task_id]) {
+                    taskMap[task.parent_task_id].children.push(taskMap[task.task_id]);
+                } else {
+                    rootTasks.push(taskMap[task.task_id]);
+                }
+            });
+            
+            // Sort root tasks by latest message timestamp (newest first)
+            rootTasks.sort((a, b) => b.latestTimestamp - a.latestTimestamp);
+            
+            // Render trees
+            rootTasks.forEach(task => {
+                const tree = document.createElement('div');
+                tree.className = 'task-tree';
+                tree.appendChild(renderTaskNode(task, true));
+                statusView.appendChild(tree);
+            });
+        }
+        
+        function renderTaskNode(task, isRoot = false) {
+            const node = document.createElement('div');
+            const isActive = activeTab === task.task_id;
+            node.className = 'task-node' + (isRoot ? ' root' : '') + (isActive ? ' active' : '');
+            node.onclick = (e) => {
+                e.stopPropagation();
+                createConversationTab(task.task_id);
+            };
+            
+            const status = task.process_info?.status || task.status || 'unknown';
+            const statusClass = status === 'running' ? 'running' : (status === 'awaiting_input' || status === 'completed') ? 'awaiting_input' : 'error';
+            
+            // Calculate statistics from conversation
+            let turns = 0;
+            let totalMessages = 0;
+            let totalTokens = 0;
+            let firstTimestamp = null;
+            let lastTimestamp = null;
+            
+            if (task.conversation && Array.isArray(task.conversation)) {
+                turns = task.conversation.length;
+                task.conversation.forEach(turn => {
+                    if (turn.messages && Array.isArray(turn.messages)) {
+                        totalMessages += turn.messages.length;
+                    }
+                    if (turn.started_at) {
+                        if (!firstTimestamp || turn.started_at < firstTimestamp) {
+                            firstTimestamp = turn.started_at;
+                        }
+                        if (!lastTimestamp || turn.started_at > lastTimestamp) {
+                            lastTimestamp = turn.started_at;
+                        }
+                    }
+                });
+            }
+            
+            // Get final token count from last_usage
+            if (task.last_usage && task.last_usage.totalTokens) {
+                totalTokens = task.last_usage.totalTokens;
+            }
+            
+            // Convert model ARN to short name
+            const modelShortName = arnToShortName(task.model_name);
+            
+            // Format timestamps
+            const startTime = formatTimestamp(firstTimestamp);
+            const endTime = formatTimestamp(lastTimestamp);
+            
+            node.innerHTML = `
+                <span class="task-id">${task.task_id}</span>
+                <span class="task-status ${statusClass}">${status}</span>
+                <div style="font-size: 11px; color: #666; margin-top: 5px; line-height: 1.4;">
+                    Turns: ${turns} | Messages: ${totalMessages} | Tokens: ${totalTokens}<br>
+                    Model: ${modelShortName} | Mode: ${task.mode || 'unknown'}<br>
+                    Start: ${startTime} | End: ${endTime}
+                </div>
+            `;
+            
+            if (task.children && task.children.length > 0) {
+                task.children.forEach(child => {
+                    node.appendChild(renderTaskNode(child));
+                });
+            }
+            
+            return node;
+        }
+        
+        function renderConversation(taskId, conversation) {
+            const messagesDiv = document.getElementById(`messages-${taskId}`);
+            if (!messagesDiv) return;
+            
+            messagesDiv.innerHTML = '';
+            
+            if (!conversation || conversation.length === 0) {
+                messagesDiv.innerHTML = '<div class="loading">No messages yet</div>';
+                return;
+            }
+            
+            conversation.forEach(turn => {
+                turn.messages.forEach(msg => {
+                    // Check if this is a user message with tool results
+                    if (msg.role === 'user') {
+                        const hasToolResults = msg.content.some(block => block.toolResult);
+                        const hasText = msg.content.some(block => block.text);
+                        
+                        if (hasToolResults && !hasText) {
+                            // Pure tool result message - display on left
+                            renderToolResultMessage(messagesDiv, msg);
+                        } else if (hasText) {
+                            // Check if it's a [SYSTEM] message
+                            const textContent = msg.content.find(block => block.text)?.text || '';
+                            const isSystem = textContent.startsWith('[SYSTEM]') || textContent.startsWith('Child task');
+                            
+                            const msgDiv = document.createElement('div');
+                            msgDiv.className = `message ${isSystem ? 'system' : 'user'}`;
+                            
+                            const contentHtml = renderMessageContent(msg);
+                            const time = new Date(msg.timestamp * 1000).toLocaleTimeString();
+                            
+                            msgDiv.innerHTML = `
+                                <div class="message-content">${contentHtml}</div>
+                                <div class="message-time">${time}</div>
+                            `;
+                            
+                            messagesDiv.appendChild(msgDiv);
+                            setupCollapsibles(msgDiv);
+                        }
+                    } else {
+                        // Assistant message - display normally
+                        const msgDiv = document.createElement('div');
+                        msgDiv.className = `message ${msg.role}`;
+                        
+                        const contentHtml = renderMessageContent(msg);
+                        const time = new Date(msg.timestamp * 1000).toLocaleTimeString();
+                        
+                        msgDiv.innerHTML = `
+                            <div class="message-content">${contentHtml}</div>
+                            <div class="message-time">${time}</div>
+                        `;
+                        
+                        messagesDiv.appendChild(msgDiv);
+                        setupCollapsibles(msgDiv);
+                    }
+                });
+            });
+            
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+        
+        function renderToolResultMessage(messagesDiv, msg) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message tool-result';
+            
+            const contentHtml = renderMessageContent(msg);
+            const time = new Date(msg.timestamp * 1000).toLocaleTimeString();
+            
+            msgDiv.innerHTML = `
+                <div class="message-content">${contentHtml}</div>
+                <div class="message-time">${time}</div>
+            `;
+            
+            messagesDiv.appendChild(msgDiv);
+            setupCollapsibles(msgDiv);
+        }
+        
+        function renderMessageContent(msg) {
+            let html = '';
+            
+            msg.content.forEach(block => {
+                if (block.text) {
+                    // Render text as markdown
+                    html += marked.parse(block.text);
+                } else if (block.toolUse) {
+                    // Render tool use as collapsible section
+                    html += renderToolUse(block.toolUse);
+                } else if (block.toolResult) {
+                    // Render tool result as collapsible section
+                    html += renderToolResult(block.toolResult);
+                }
+            });
+            
+            return html;
+        }
+        
+        function renderToolUse(toolUse) {
+            const toolName = toolUse.name;
+            const toolInput = toolUse.input;
+            const toolUseId = toolUse.toolUseId;
+            
+            // Create abbreviated preview
+            const inputStr = JSON.stringify(toolInput);
+            const preview = inputStr.length > 60 ? inputStr.substring(0, 60) + '...' : inputStr;
+            
+            // Store raw data encoded for safe storage
+            const encodedInput = btoa(encodeURIComponent(JSON.stringify(toolInput)));
+            
+            return `
+                <div class="tool-section" data-tool-input="${encodedInput}">
+                    <div class="tool-header">
+                        <span class="icon">🛠️</span>
+                        <span>Using tool: ${escapeHtml(toolName)} ${escapeHtml(preview)}</span>
+                        <span class="arrow">▶</span>
+                    </div>
+                    <div class="tool-body"></div>
+                </div>
+            `;
+        }
+        
+        function renderToolResult(toolResult) {
+            const toolUseId = toolResult.toolUseId;
+            const status = toolResult.status || 'success';
+            const icon = status === 'error' ? '❌' : '✅';
+            
+            // Extract text content
+            let resultText = '';
+            if (toolResult.content && toolResult.content.length > 0) {
+                resultText = toolResult.content.map(c => c.text || '').join('\n');
+            }
+            
+            // Create abbreviated preview
+            const preview = resultText.length > 60 ? resultText.substring(0, 60) + '...' : resultText;
+            
+            // Try to parse as JSON for pretty printing
+            let isJson = false;
+            try {
+                JSON.parse(resultText);
+                isJson = true;
+            } catch (e) {
+                // Not JSON, will display as-is
+            }
+            
+            // Store raw data encoded for safe storage
+            const encodedResult = btoa(encodeURIComponent(resultText));
+            
+            return `
+                <div class="tool-section" data-tool-result="${encodedResult}" data-is-json="${isJson}">
+                    <div class="tool-header">
+                        <span class="icon">${icon}</span>
+                        <span>Tool result: ${escapeHtml(preview)}</span>
+                        <span class="arrow">▶</span>
+                    </div>
+                    <div class="tool-body"></div>
+                </div>
+            `;
+        }
+        
+        function setupCollapsibles(container) {
+            const headers = container.querySelectorAll('.tool-header');
+            headers.forEach(header => {
+                header.onclick = () => {
+                    const wasExpanded = header.classList.contains('expanded');
+                    header.classList.toggle('expanded');
+                    const body = header.nextElementSibling;
+                    body.classList.toggle('expanded');
+                    
+                    // Pretty-print JSON on first expand
+                    if (!wasExpanded && body.textContent === '') {
+                        const section = header.parentElement;
+                        
+                        // Check if it's a tool use (has data-tool-input)
+                        if (section.dataset.toolInput) {
+                            try {
+                                const decoded = decodeURIComponent(atob(section.dataset.toolInput));
+                                const inputData = JSON.parse(decoded);
+                                body.textContent = JSON.stringify(inputData, null, 2);
+                            } catch (e) {
+                                body.textContent = 'Error decoding tool input: ' + e.message;
+                            }
+                        }
+                        // Check if it's a tool result
+                        else if (section.dataset.toolResult) {
+                            try {
+                                const resultText = decodeURIComponent(atob(section.dataset.toolResult));
+                                // Always try to pretty-print if it looks like JSON
+                                if (resultText.trim().startsWith('{') || resultText.trim().startsWith('[')) {
+                                    try {
+                                        const jsonData = JSON.parse(resultText);
+                                        body.textContent = JSON.stringify(jsonData, null, 2);
+                                    } catch (e) {
+                                        // If parsing fails, display as-is
+                                        body.textContent = resultText;
+                                    }
+                                } else {
+                                    // Not JSON, display as-is
+                                    body.textContent = resultText;
+                                }
+                            } catch (e) {
+                                body.textContent = 'Error decoding tool result: ' + e.message;
+                            }
+                        }
+                    }
+                };
+            });
+        }
+        
+        function setSendButtonState(taskId, isRunning) {
+            const sendBtn = document.getElementById(`send-btn-${taskId}`) || document.getElementById(`stop-btn-${taskId}`);
+            if (!sendBtn) return;
+            
+            if (isRunning) {
+                sendBtn.textContent = 'Stop';
+                sendBtn.className = 'stop-btn';
+            } else {
+                sendBtn.textContent = 'Send';
+                sendBtn.className = 'send-btn';
+            }
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Event Listeners
+        document.getElementById('new-conversation').onclick = () => {
+            const tempId = 'new-' + Date.now();
+            createConversationTab(tempId, true);
+        };
+        
+        // Initialize
+        loadTasks();
+        setInterval(loadTasks, 5000); // Refresh task list every 5 seconds
+    </script>
+</body>
+</html>

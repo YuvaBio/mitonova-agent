@@ -1,0 +1,47 @@
+# Environment variables - CRITICAL: Contains API keys
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Mac
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+agent_storage_temp/
+dump.rdb
+
+# Job files
+jobs/
+
+# Backups
+core.bak*/
+*.bak
+
+# Generated files
+file_tree.txt
